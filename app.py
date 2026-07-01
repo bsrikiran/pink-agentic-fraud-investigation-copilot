@@ -55,8 +55,7 @@ def main() -> None:
         st.session_state["nav_radio"] = st.session_state.pop("_pending_nav")
 
     st.sidebar.markdown("### Agentic Fraud Investigation Copilot")
-    current_role = st.sidebar.radio("Role", [ANALYST_NAME, FRAUD_MANAGER_NAME], key="current_role")
-    st.sidebar.write("---")
+    current_role = st.session_state["current_role"]
 
     nav_options = ROLE_NAV_OPTIONS[current_role]
     if st.session_state.get("nav_radio") not in nav_options:
