@@ -5,7 +5,8 @@ from datetime import datetime
 import streamlit as st
 from ui.components import (
     load_investigation_cases,
-    render_metric_card,
+    render_kpi_row,
+    render_system_status_panel,
     parse_cases_dataframe,
     badge_html,
     tier_variant,
@@ -19,9 +20,12 @@ from rag.vector_store import PolicyVectorStore
 from backend.investigator import run_investigation
 from backend.config import validate_config, OPENAI_MODEL
 
+ASSUMED_MANUAL_MINUTES_PER_CASE = 20  # illustrative baseline for the "time saved" estimate below
+
 @st.cache_data(ttl=30)
 def _get_ai_system_status() -> dict:
-    """Checks whether the AI investigation engine (LLM credentials + policy knowledge base) is operational."""
+    """Checks whether the AI investigation engine (LLM credentials + policy knowledge base) is operational.
+    Cached for 30s, so 'checked_at' reflects when this check actually last ran, not just 'now'."""
     llm_ready = validate_config()
     document_count = 0
     try:
@@ -30,31 +34,11 @@ def _get_ai_system_status() -> dict:
     except Exception:
         pass
     return {
-        "operational": llm_ready and document_count > 0,
         "llm_ready": llm_ready,
         "model": OPENAI_MODEL,
         "document_count": document_count,
+        "checked_at": datetime.now().strftime("%H:%M:%S"),
     }
-
-def render_ai_system_status() -> None:
-    """Renders a compact banner reporting whether the AI engine is ready to run investigations."""
-    status = _get_ai_system_status()
-    if status["operational"]:
-        st.markdown(f"""
-            <div class="status-banner status-ok">
-                <span class="status-dot"></span>
-                AI System Operational &nbsp;·&nbsp; Model: {status['model']} &nbsp;·&nbsp;
-                Policy Knowledge Base: {status['document_count']} documents indexed
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        reason = "OPENAI_API_KEY is not configured" if not status["llm_ready"] else "Policy knowledge base is empty"
-        st.markdown(f"""
-            <div class="status-banner status-down">
-                <span class="status-dot"></span>
-                AI System Unavailable &nbsp;·&nbsp; {reason}
-            </div>
-        """, unsafe_allow_html=True)
 
 def _derive_status(case_id: str, fallback: str) -> str:
     """Resolves a case's current display status: a recorded disposition takes precedence
@@ -74,12 +58,27 @@ def _resolved_risk(case_id: str, fallback_priority: str) -> str:
     result = st.session_state.get("case_results", {}).get(case_id)
     return result.get("risk_level", fallback_priority) if result else fallback_priority
 
-def render_case_queue_view() -> None:
-    """Landing view: today's operational snapshot, followed by the case queue."""
-    st.title("Fraud Operations Dashboard")
-    render_ai_system_status()
-    cases = load_investigation_cases()
+def _assigned_to(status_label: str) -> str:
+    """A case sits unassigned until someone opens it; there's a single analyst persona for now."""
+    return "Unassigned" if status_label.strip().lower() == "new" else ANALYST_NAME
 
+def _last_updated(case_id: str, fallback_date: str) -> str:
+    """Resolves the most recent activity timestamp for a case: a disposition takes precedence
+    over an investigation run, which takes precedence over the case's original creation date."""
+    disposition = st.session_state.get("disposition_records", {}).get(case_id)
+    if disposition:
+        return disposition["timestamp"]
+    updated = st.session_state.get("case_last_updated", {}).get(case_id)
+    return updated or fallback_date
+
+def render_case_queue_view() -> None:
+    """Landing view: the Fraud Operations Work Queue - system health, today's KPIs,
+    the unresolved investigation queue, and the tool's measured business impact."""
+    st.title("Fraud Operations Work Queue")
+    st.caption("AI-powered decision support for fraud investigations")
+    st.write("")
+
+    cases = load_investigation_cases()
     if not cases:
         st.warning("No cases found in the active data source.")
         return
@@ -90,48 +89,50 @@ def render_case_queue_view() -> None:
     case_results = st.session_state.setdefault("case_results", {})
     disposed_statuses = {"Approved", "Declined", "Escalated"}
 
-    active_investigations = int((df["status"] == "Under Review").sum())
-    require_review = int((df["status"] == "New").sum())
+    active_cases = int((df["status"] == "Under Review").sum())
+    pending_review = int((df["status"] == "New").sum())
     open_df = df[~df["status"].isin(disposed_statuses)]
     high_risk_cases = sum(
         _resolved_risk(cid, pr).lower() == "high"
         for cid, pr in zip(open_df["case_id"], open_df["priority"])
     )
-    waiting_on_approval = sum(
+    awaiting_approval = sum(
         1 for cid, status in zip(df["case_id"], df["status"])
         if status == "Under Review" and case_results.get(cid, {}).get("recommendation") == "Approve"
     )
 
-    st.markdown("##### Today")
-    op_col1, op_col2, op_col3, op_col4 = st.columns(4)
-    with op_col1:
-        render_metric_card("Active Investigations", active_investigations)
-    with op_col2:
-        render_metric_card("Require Analyst Review", require_review)
-    with op_col3:
-        render_metric_card("High Risk Cases", high_risk_cases)
-    with op_col4:
-        render_metric_card("Waiting on Approval", waiting_on_approval)
+    render_kpi_row([
+        ("Active Cases", active_cases),
+        ("Pending Analyst Review", pending_review),
+        ("High Risk Cases", high_risk_cases),
+        ("Awaiting Approval", awaiting_approval),
+    ])
 
     st.write("")
+    status = _get_ai_system_status()
+    render_system_status_panel(
+        [
+            ("AI Investigation Engine Online", status["llm_ready"]),
+            ("Policy Knowledge Base Connected", status["document_count"] > 0),
+            ("Customer Data Available", len(cases) > 0),
+        ],
+        last_refreshed=status["checked_at"],
+    )
+
     st.write("---")
 
-    st.markdown("##### Case Queue")
-    priority_counts = df["priority"].str.lower().value_counts()
-    st.caption(
-        f"{len(df)} cases in queue  —  "
-        f"{int(priority_counts.get('high', 0))} High · "
-        f"{int(priority_counts.get('medium', 0))} Medium · "
-        f"{int(priority_counts.get('low', 0))} Low priority"
-    )
+    st.markdown("##### Investigation Queue")
+    unresolved_df = df[df["status"] != "Closed"]
+    st.caption(f"{len(unresolved_df)} unresolved investigations")
     st.write("")
 
-    col_widths = [1.2, 1.4, 1.4, 1.0, 0.9, 1.1, 0.8]
+    col_widths = [1.0, 1.2, 1.2, 0.7, 0.7, 1.0, 1.1, 1.0, 1.1]
+    headers = ["Case ID", "Customer", "Merchant", "Amount", "Priority", "Current Status", "Assigned To", "Last Updated", ""]
     header_cols = st.columns(col_widths)
-    for col, label in zip(header_cols, ["Case ID", "Customer", "Merchant", "Amount", "Priority", "Status", ""]):
+    for col, label in zip(header_cols, headers):
         col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
 
-    for _, row in df.iterrows():
+    for _, row in unresolved_df.iterrows():
         cols = st.columns(col_widths)
         cols[0].markdown(f"**{row['case_id']}**")
         cols[1].write(row["customer"])
@@ -139,10 +140,28 @@ def render_case_queue_view() -> None:
         cols[3].write(f"{row['amount']:,.2f}")
         cols[4].markdown(badge_html(row["priority"], tier_variant(row["priority"])), unsafe_allow_html=True)
         cols[5].markdown(badge_html(row["status"], case_status_variant(row["status"])), unsafe_allow_html=True)
-        if cols[6].button("Open", key=f"open_{row['case_id']}", use_container_width=True):
+        cols[6].write(_assigned_to(row["status"]))
+        cols[7].write(_last_updated(row["case_id"], row["created_date"]))
+        if cols[8].button("Review →", key=f"open_{row['case_id']}", use_container_width=True):
             st.session_state["selected_case_id"] = row["case_id"]
             st.session_state["_pending_nav"] = "Investigation"
             st.rerun()
+
+    st.write("---")
+
+    st.markdown("##### Business Impact")
+    investigated_count = len(case_results)
+    time_saved_minutes = investigated_count * ASSUMED_MANUAL_MINUTES_PER_CASE
+    time_saved_display = f"{time_saved_minutes // 60}h {time_saved_minutes % 60}m" if investigated_count else "0m"
+    approve_count = sum(1 for r in case_results.values() if r.get("recommendation") == "Approve")
+    reduction_pct = (approve_count / investigated_count * 100) if investigated_count else 0
+
+    render_kpi_row([
+        ("Est. Investigation Time Saved", time_saved_display),
+        ("Manual Review Reduction", f"{reduction_pct:.0f}%"),
+        ("AI Recommendations Generated", investigated_count),
+    ])
+    st.caption(f"Time saved assumes ~{ASSUMED_MANUAL_MINUTES_PER_CASE} manual minutes per AI-assisted case reviewed today.")
 
     with st.expander("About this system"):
         st.markdown(
@@ -247,6 +266,7 @@ def render_investigation_view() -> None:
                 st.error(f"Investigation failed: {investigation_result.get('message', 'Unknown error')}")
             else:
                 case_results[selected_id] = investigation_result
+                st.session_state.setdefault("case_last_updated", {})[selected_id] = datetime.now().strftime("%Y-%m-%d %H:%M")
                 st.rerun()
 
     if not result:
@@ -345,18 +365,12 @@ def render_analytics_view() -> None:
     df = parse_cases_dataframe(cases)
     priority_counts = df["priority"].str.lower().value_counts()
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        render_metric_card("Total Cases", len(df))
-    with col2:
-        render_metric_card("Average Exposure", f"${df['amount'].mean():,.2f}")
-    with col3:
-        render_metric_card("Prior Fraud Incidents", int(df["past_fraud"].sum()))
-    with col4:
-        render_metric_card(
-            "Priority Mix",
-            f"{int(priority_counts.get('high', 0))}H / {int(priority_counts.get('medium', 0))}M / {int(priority_counts.get('low', 0))}L"
-        )
+    render_kpi_row([
+        ("Total Cases", len(df)),
+        ("Average Exposure", f"${df['amount'].mean():,.2f}"),
+        ("Prior Fraud Incidents", int(df["past_fraud"].sum())),
+        ("Priority Mix", f"{int(priority_counts.get('high', 0))}H / {int(priority_counts.get('medium', 0))}M / {int(priority_counts.get('low', 0))}L"),
+    ])
 
     st.write("")
     st.subheader("Exposure by Case")

@@ -5,7 +5,7 @@ import json
 import logging
 import pandas as pd
 import streamlit as st
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("ui.components")
 
@@ -33,6 +33,29 @@ def render_metric_card(label: str, value: Any, delta_status: Optional[str] = Non
             <div class="metric-label">{label}</div>
             <div class="metric-value">{value}</div>
             {"<div style='color:#059669; font-size:0.85rem; font-weight:500;'>" + delta_status + "</div>" if delta_status else ""}
+        </div>
+    """, unsafe_allow_html=True)
+
+def render_kpi_row(items: List[Tuple[str, Any]]) -> None:
+    """Renders a row of equal-width metric cards from (label, value) pairs. Reused across
+    the Work Queue, Analytics, and Business Impact sections."""
+    cols = st.columns(len(items))
+    for col, (label, value) in zip(cols, items):
+        with col:
+            render_metric_card(label, value)
+
+def render_system_status_panel(checks: List[Tuple[str, bool]], last_refreshed: str) -> None:
+    """Renders a multi-row system health panel (one row per check) with a last-refreshed footer."""
+    rows = []
+    for label, ok in checks:
+        dot_class = "ok" if ok else "down"
+        row_class = "status-row" if ok else "status-row down"
+        text = label if ok else f"{label} — Unavailable"
+        rows.append(f'<div class="{row_class}"><span class="status-dot {dot_class}"></span>{text}</div>')
+    st.markdown(f"""
+        <div class="status-panel">
+            {"".join(rows)}
+            <div class="status-panel-footer">Last refreshed {last_refreshed}</div>
         </div>
     """, unsafe_allow_html=True)
 

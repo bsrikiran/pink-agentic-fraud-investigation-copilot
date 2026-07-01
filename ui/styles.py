@@ -12,21 +12,23 @@ def apply_custom_css() -> None:
             [data-testid="stMainBlockContainer"] { padding-top: 1.5rem !important; padding-bottom: 2rem; }
             h1, h2, h3 { color: #0F172A !important; font-family: 'Inter', -apple-system, sans-serif; }
 
-            /* AI System Status banner */
-            .status-banner {
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 0.9rem;
+            /* AI System Status panel: multiple check rows + a last-refreshed footer */
+            .status-panel {
+                border: 1px solid #E2E8F0;
                 border-radius: 4px;
-                font-size: 0.85rem;
+                padding: 0.75rem 1rem;
+                background-color: #F8FAFC;
                 margin-bottom: 1.25rem;
             }
-            .status-banner.status-ok { background-color: #F0FDF4; border: 1px solid #BBF7D0; color: #166534; }
-            .status-banner.status-down { background-color: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+            .status-row { display: flex; align-items: center; gap: 0.55rem; font-size: 0.85rem; color: #166534; padding: 0.2rem 0; }
+            .status-row.down { color: #991B1B; }
             .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-            .status-banner.status-ok .status-dot { background-color: #22C55E; }
-            .status-banner.status-down .status-dot { background-color: #EF4444; }
+            .status-dot.ok { background-color: #22C55E; }
+            .status-dot.down { background-color: #EF4444; }
+            .status-panel-footer {
+                font-size: 0.75rem; color: #94A3B8; margin-top: 0.4rem;
+                padding-top: 0.4rem; border-top: 1px solid #E2E8F0;
+            }
 
             /* Metric Cards (Analytics KPIs) */
             .metric-container {
