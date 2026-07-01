@@ -2,6 +2,7 @@
 Purpose: Assembling main dashboard view configurations, interaction workflows, and charts.
 """
 from datetime import datetime
+import logging
 import streamlit as st
 from ui.components import (
     load_investigation_cases,
@@ -19,15 +20,33 @@ from ui.components import (
 )
 from rag.retriever import retrieve_policy_matches, format_policy_context, format_policy_citations
 from rag.vector_store import PolicyVectorStore
+from rag_ingest import ingest_policies
 from backend.investigator import run_investigation
 from backend.config import validate_config, OPENAI_MODEL
 
+logger = logging.getLogger("ui.pages")
+
 ASSUMED_MANUAL_MINUTES_PER_CASE = 20  # illustrative baseline for the "time saved" estimate below
+
+@st.cache_resource
+def _bootstrap_policy_index() -> None:
+    """Populates the policy vector store the first time the app runs in a given deployment.
+    chroma_db_store/ is gitignored (it's a binary artifact), so a fresh clone - e.g. every
+    Streamlit Cloud deploy - starts with an empty index. cache_resource makes this run once
+    per process rather than on every rerun."""
+    if not validate_config():
+        return
+    try:
+        if PolicyVectorStore().collection.count() == 0:
+            ingest_policies()
+    except Exception:
+        logger.exception("Policy index bootstrap failed.")
 
 @st.cache_data(ttl=30)
 def _get_ai_system_status() -> dict:
     """Checks whether the AI investigation engine (LLM credentials + policy knowledge base) is operational.
     Cached for 30s, so 'checked_at' reflects when this check actually last ran, not just 'now'."""
+    _bootstrap_policy_index()
     llm_ready = validate_config()
     document_count = 0
     try:
