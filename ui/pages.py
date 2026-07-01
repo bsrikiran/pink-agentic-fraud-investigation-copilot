@@ -29,8 +29,14 @@ def _derive_status(case_id: str, fallback: str) -> str:
         return "Under Review"
     return fallback
 
+def _resolved_risk(case_id: str, fallback_priority: str) -> str:
+    """Resolves a case's current risk tier: the AI's own risk_level once investigated,
+    otherwise the case's pre-investigation priority."""
+    result = st.session_state.get("case_results", {}).get(case_id)
+    return result.get("risk_level", fallback_priority) if result else fallback_priority
+
 def render_case_queue_view() -> None:
-    """Landing view: the analyst's queue of cases awaiting review."""
+    """Landing view: today's operational snapshot, followed by the case queue."""
     st.title("Case Queue")
     cases = load_investigation_cases()
 
@@ -40,6 +46,35 @@ def render_case_queue_view() -> None:
 
     df = parse_cases_dataframe(cases)
     df["status"] = [_derive_status(cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
+
+    case_results = st.session_state.setdefault("case_results", {})
+    disposed_statuses = {"Approved", "Declined", "Escalated"}
+
+    active_investigations = int((df["status"] == "Under Review").sum())
+    require_review = int((df["status"] == "New").sum())
+    open_df = df[~df["status"].isin(disposed_statuses)]
+    high_risk_cases = sum(
+        _resolved_risk(cid, pr).lower() == "high"
+        for cid, pr in zip(open_df["case_id"], open_df["priority"])
+    )
+    waiting_on_approval = sum(
+        1 for cid, status in zip(df["case_id"], df["status"])
+        if status == "Under Review" and case_results.get(cid, {}).get("recommendation") == "Approve"
+    )
+
+    st.markdown("##### Today")
+    op_col1, op_col2, op_col3, op_col4 = st.columns(4)
+    with op_col1:
+        render_metric_card("Active Investigations", active_investigations)
+    with op_col2:
+        render_metric_card("Require Analyst Review", require_review)
+    with op_col3:
+        render_metric_card("High Risk Cases", high_risk_cases)
+    with op_col4:
+        render_metric_card("Waiting on Approval", waiting_on_approval)
+
+    st.write("")
+    st.write("---")
 
     priority_counts = df["priority"].str.lower().value_counts()
     st.caption(
