@@ -102,7 +102,7 @@ def _last_updated(case_id: str, fallback_date: str) -> str:
 
 def render_case_queue_view() -> None:
     """Landing view: the Fraud Operations Work Queue - system health, today's KPIs,
-    the unresolved investigation queue, and the tool's measured business impact."""
+    and the unresolved investigation queue."""
     st.title("Fraud Operations Work Queue")
     st.caption("AI-powered decision support for fraud investigations")
     st.write("")
@@ -115,7 +115,6 @@ def render_case_queue_view() -> None:
     df = parse_cases_dataframe(cases)
     df["status"] = [_derive_status(cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
 
-    case_results = st.session_state.setdefault("case_results", {})
     disposed_statuses = {"Approved", "Declined", "Escalated"}  # awaiting Fraud Manager sign-off
     resolved_statuses = disposed_statuses | {"Closed"}  # fully out of the active workload
 
@@ -173,30 +172,6 @@ def render_case_queue_view() -> None:
             st.session_state["selected_case_id"] = row["case_id"]
             st.session_state["_pending_nav"] = "Investigation"
             st.rerun()
-
-    st.write("---")
-
-    st.markdown("##### Business Impact")
-    investigated_count = len(case_results)
-    time_saved_minutes = investigated_count * ASSUMED_MANUAL_MINUTES_PER_CASE
-    time_saved_display = f"{time_saved_minutes // 60}h {time_saved_minutes % 60}m" if investigated_count else "0m"
-    approve_count = sum(1 for r in case_results.values() if r.get("recommendation") == "Approve")
-    reduction_pct = (approve_count / investigated_count * 100) if investigated_count else 0
-
-    render_kpi_row([
-        ("Est. Investigation Time Saved", time_saved_display),
-        ("Manual Review Reduction", f"{reduction_pct:.0f}%"),
-        ("AI Recommendations Generated", investigated_count),
-    ])
-    st.caption(f"Time saved assumes ~{ASSUMED_MANUAL_MINUTES_PER_CASE} manual minutes per AI-assisted case reviewed today.")
-
-    with st.expander("About this system"):
-        st.markdown(
-            "The Agentic Fraud Investigation Copilot assists fraud analysts by reviewing flagged "
-            "transactions, retrieving relevant internal policy guidance, and producing an "
-            "evidence-based recommendation. All recommendations are advisory — the analyst "
-            "makes the final decision."
-        )
 
 def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
     """Single-case investigation workspace: facts, AI assessment, evidence, analyst disposition,
@@ -490,7 +465,8 @@ def render_manager_queue_view() -> None:
             st.rerun()
 
 def render_analytics_view() -> None:
-    """Operational reporting view: portfolio-level KPIs and exposure distribution."""
+    """Operational reporting view: portfolio-level KPIs, exposure distribution, and the
+    tool's measured business impact."""
     st.title("Analytics")
     cases = load_investigation_cases()
 
@@ -520,3 +496,28 @@ def render_analytics_view() -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+    st.write("---")
+
+    st.markdown("##### Business Impact")
+    case_results = st.session_state.setdefault("case_results", {})
+    investigated_count = len(case_results)
+    time_saved_minutes = investigated_count * ASSUMED_MANUAL_MINUTES_PER_CASE
+    time_saved_display = f"{time_saved_minutes // 60}h {time_saved_minutes % 60}m" if investigated_count else "0m"
+    approve_count = sum(1 for r in case_results.values() if r.get("recommendation") == "Approve")
+    reduction_pct = (approve_count / investigated_count * 100) if investigated_count else 0
+
+    render_kpi_row([
+        ("Est. Investigation Time Saved", time_saved_display),
+        ("Manual Review Reduction", f"{reduction_pct:.0f}%"),
+        ("AI Recommendations Generated", investigated_count),
+    ])
+    st.caption(f"Time saved assumes ~{ASSUMED_MANUAL_MINUTES_PER_CASE} manual minutes per AI-assisted case reviewed today.")
+
+    with st.expander("About this system"):
+        st.markdown(
+            "The Agentic Fraud Investigation Copilot assists fraud analysts by reviewing flagged "
+            "transactions, retrieving relevant internal policy guidance, and producing an "
+            "evidence-based recommendation. All recommendations are advisory — the analyst "
+            "makes the final decision."
+        )
