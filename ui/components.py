@@ -33,7 +33,7 @@ def render_metric_card(label: str, value: Any, delta_status: Optional[str] = Non
         <div class="metric-container">
             <div class="metric-label">{label}</div>
             <div class="metric-value">{value}</div>
-            {"<div style='color:#059669; font-size:0.85rem; font-weight:500;'>" + delta_status + "</div>" if delta_status else ""}
+            {"<div style='color:var(--color-primary-dark); font-size:0.85rem; font-weight:500;'>" + delta_status + "</div>" if delta_status else ""}
         </div>
     """, unsafe_allow_html=True)
 
@@ -62,7 +62,7 @@ def render_system_status_panel(checks: List[Tuple[str, bool]], last_refreshed: s
 
 def badge_html(label: str, variant: str) -> str:
     """Returns a colored status/priority pill span. Variant must match a .badge-<variant> CSS class
-    (high, medium, low, neutral, approved, declined, escalated, review)."""
+    (high, medium, low, neutral, approved, declined, escalated, review, returned, closed)."""
     return f'<span class="badge badge-{variant}">{label}</span>'
 
 def tier_variant(tier: Optional[str]) -> str:
@@ -77,7 +77,7 @@ def case_status_variant(status_label: str) -> str:
         "escalated": "escalated",
         "under review": "review",
         "closed": "closed",
-        "returned": "escalated",
+        "returned": "returned",
     }.get(status_label.strip().lower(), "neutral")
 
 def render_decision_record(decision: str, notes: str, actor: str, timestamp: str) -> None:
