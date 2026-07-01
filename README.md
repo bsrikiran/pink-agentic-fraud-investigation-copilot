@@ -104,3 +104,13 @@ Multi-Agent Architecture (Future)
 License
 
 This project is intended for educational and portfolio purposes.
+
+## 🚀 Production Deployment
+To pull and execute the official stable release, check out the target tag:
+```bash
+git checkout v1.0
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python3 rag_ingest.py
+streamlit run app.py
+```

@@ -11,51 +11,6 @@ from backend.models import InvestigationResultModel
 
 logger = logging.getLogger("backend.utils")
 
-# Explicit business mapping defining corporate policy asset names
-POLICY_NAME_MAP: dict[str, str] = {
-    "policy_1.pdf": "Global Transaction Verification and High-Value Asset Protection Policy",
-    "policy_2.pdf": "Cross-Border Remittance Compliance and Anti-Money Laundering Framework",
-    "policy_3.pdf": "Customer Device Fingerprinting and Digital Identity Assurance Standard",
-    "policy_4.pdf": "Velocity Monitoring and High-Frequency Behavioral Anomaly Ruleset",
-    "policy_5.pdf": "Merchant Risk Categorization and High-Exposure Vendor Guardrails",
-    "policy_6.pdf": "Account Compromise Detection and Step-Up Authentication Mandate",
-    "policy_7.pdf": "Geographic Anomalies and Safe-Travel Exception Verification Protocol",
-    "policy_8.pdf": "Card-Not-Present (CNP) Transaction Security Enforcements",
-    "policy_9.pdf": "New Account Probationary Period Restrictions and Monitoring Guide",
-    "policy_10.pdf": "Suspicious Activity Reporting (SAR) Operations and Escalation Procedures"
-}
-
-def match_project_policies(raw_citations: list) -> list[str]:
-    """
-    Translates literal PDF filenames or free-text mentions into human-readable business policy names.
-    
-    Args:
-        raw_citations (list): Text patterns or filenames provided by the upstream components.
-        
-    Returns:
-        list[str]: Formal business policy names mapped directly back to existing project file domains.
-    """
-    matched_names = []
-    text_corpus = " ".join([str(c) for c in raw_citations]).lower()
-    
-    # Check for direct file references or numeric indicators safely
-    for filename, business_name in POLICY_NAME_MAP.items():
-        # Look for literal strings like 'policy_1', 'policy 1', or 'policy1'
-        base_name = filename.replace(".pdf", "")  # e.g., 'policy_1'
-        numeric_id = base_name.split("_")[-1]      # e.g., '1'
-        
-        if (base_name in text_corpus or 
-            f"policy {numeric_id}" in text_corpus or 
-            f"policy{numeric_id}" in text_corpus or 
-            business_name.lower() in text_corpus):
-            matched_names.append(business_name)
-            
-    # Fallback default policy matching project asset #1 if no specific trace was found
-    if not matched_names:
-        matched_names.append(POLICY_NAME_MAP["policy_1.pdf"])
-        
-    return matched_names
-
 def validate_llm_json_response(raw_string_payload: str) -> Tuple[bool, Dict[str, Any]]:
     """
     Validates that a string payload matches the strict schema definition contract while wiping artifacts.
@@ -73,30 +28,32 @@ def validate_llm_json_response(raw_string_payload: str) -> Tuple[bool, Dict[str,
         normalized = {}
         normalized["fraud_score"] = parsed_dict.get("fraud_score") or parsed_dict.get("step_7_fraud_score")
         normalized["risk_level"] = parsed_dict.get("risk_level") or parsed_dict.get("step_5_risk_assessment")
-        normalized["confidence"] = parsed_dict.get("confidence") or parsed_dict.get("step_8_confidence") or "High"
+        normalized["confidence"] = parsed_dict.get("confidence") or parsed_dict.get("step_8_confidence")
         normalized["recommendation"] = parsed_dict.get("recommendation") or parsed_dict.get("step_6_recommendation")
         normalized["reasoning"] = parsed_dict.get("reasoning") or parsed_dict.get("step_9_reasoning") or []
-        
-        # Populate newly required elements dynamically if missed by basic prompt iterations
-        normalized["fraud_indicators"] = parsed_dict.get("fraud_indicators") or parsed_dict.get("step_4_fraud_indicators") or ["Unusual transaction profile"]
-        
+        normalized["fraud_indicators"] = parsed_dict.get("fraud_indicators") or parsed_dict.get("step_4_fraud_indicators") or []
+
         raw_summary = parsed_dict.get("investigation_summary")
         if not raw_summary:
-            raw_summary = f"Automated analysis completed. Action recommended: {normalized['recommendation']} based on observed anomalies."
+            raw_summary = "The model did not return an investigation summary for this case; manual review of the raw output is recommended."
         normalized["investigation_summary"] = raw_summary
-        
-        # Extract and translate policy references to official business compliance titles
-        raw_policies = parsed_dict.get("policy_reference") or parsed_dict.get("step_3_policy_review", {}).get("policy_reference") or ["policy_1.pdf"]
-        citations_list = raw_policies if isinstance(raw_policies, list) else [raw_policies]
-        normalized["policy_reference"] = match_project_policies(citations_list)
-        
-        # Handle structural missing fallbacks cleanly to stay robust
+
+        # Keep the model's own policy_reference as-is: it only signals whether the model judged
+        # policy guidance relevant. backend.investigator swaps this for the real retrieved
+        # citations (or clears it) once it has that context - this function has no access to it.
+        raw_policies = parsed_dict.get("policy_reference") or parsed_dict.get("step_3_policy_review", {}).get("policy_reference") or []
+        normalized["policy_reference"] = raw_policies if isinstance(raw_policies, list) else [raw_policies]
+
+        # A missing fraud_score means the LLM response was malformed - surface that instead of guessing.
         if normalized["fraud_score"] is None:
-            normalized["fraud_score"] = 50
+            return False, {"status": "error", "message": "LLM response did not include a fraud_score; cannot proceed without it."}
         if not normalized["risk_level"]:
             score = normalized["fraud_score"]
             normalized["risk_level"] = "High" if score >= 70 else ("Medium" if score >= 30 else "Low")
-            
+        # Missing confidence should read as uncertain, not as a confident "High" the model never stated.
+        if not normalized["confidence"]:
+            normalized["confidence"] = "Low"
+
         # Pydantic Enforcement Validation Check
         final_model = InvestigationResultModel.model_validate(normalized)
         return True, final_model.model_dump()

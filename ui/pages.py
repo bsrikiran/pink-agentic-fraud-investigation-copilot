@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 from ui.components import load_investigation_cases, render_metric_card, parse_cases_dataframe
 from ui.styles import apply_custom_css
-from rag.retriever import retrieve_policy_context
+from rag.retriever import retrieve_policy_matches, format_policy_context, format_policy_citations
 from backend.investigator import run_investigation
 
 def render_home_view() -> None:
@@ -27,43 +27,31 @@ def render_home_view() -> None:
     st.write("")
     st.info("System Ready. Click the navigation options above to initiate active transaction validation runs.")
 
+def _resolve_case_id(c: dict, idx: int) -> str:
+    """Resolves a stable ID for a case record, regardless of nested vs. flat structure."""
+    tid = c.get("transaction_id")
+    if not tid and isinstance(c.get("transaction"), dict):
+        tid = c["transaction"].get("transaction_id")
+    if not tid:
+        tid = c.get("case_id") or c.get("id") or f"CASE-TICKET-{idx+1:03d}"
+    return str(tid)
+
 def render_investigation_pipeline_view() -> None:
     """Orchestrates multi-turn review sessions, execution requests, and charts responses."""
     st.title("🔎 Automated Evaluation Workbench")
     cases = load_investigation_cases()
-    
+
     if not cases:
         st.warning("No operational investigation entities found within active local data clusters.")
         return
-        
-    # --- FIXED & HARDENED ADAPTIVE DROP-DOWN PARSING ---
-    case_ids = []
-    for idx, c in enumerate(cases):
-        # Strategy 1: Check root level
-        tid = c.get("transaction_id")
-        
-        # Strategy 2: Check nested 'transaction' block
-        if not tid and isinstance(c.get("transaction"), dict):
-            tid = c.get("transaction", {}).get("transaction_id")
-            
-        # Strategy 3: Check common alternatives or fall back to an index string
-        if not tid:
-            tid = c.get("case_id") or c.get("id") or f"CASE-TICKET-{idx+1:03d}"
-            
-        case_ids.append(str(tid))
-        
+
+    case_ids = [_resolve_case_id(c, idx) for idx, c in enumerate(cases)]
     selected_id = st.selectbox("Select Active Risk Ticket ID for Evaluation:", case_ids)
-    
-    # Locate targeted data structures matching the selected ID safely
-    # This matching block handles both nested and flat root variations perfectly
+
+    # Locate the case matching the selected ID using the same resolution logic as the dropdown
     case_package = None
     for idx, c in enumerate(cases):
-        current_id = (
-            c.get("transaction_id") or 
-            c.get("transaction", {}).get("transaction_id") if isinstance(c.get("transaction"), dict) else None or
-            c.get("case_id") or c.get("id") or f"CASE-TICKET-{idx+1:03d}"
-        )
-        if str(current_id) == selected_id:
+        if _resolve_case_id(c, idx) == selected_id:
             case_package = c
             break
             
@@ -88,7 +76,7 @@ def render_investigation_pipeline_view() -> None:
         st.text(f"Financial Value: {txn.get('currency', 'USD')} {txn.get('amount'):,}")
     with col2:
         st.text(f"Counterparty Merchant: {txn.get('merchant')}")
-        st.text(f"Location Zone: {txn.get('location')}")
+        st.text(f"Location Zone: {txn.get('location') or txn.get('transaction_location')}")
     with col3:
         st.text(f"Device Known: {'Yes' if txn.get('known_device') else 'No (New Fingerprint)'}")
         st.text(f"Travel Profile Active: {'Yes' if txn.get('travel_notice') else 'No Notification'}")
@@ -100,14 +88,18 @@ def render_investigation_pipeline_view() -> None:
         with st.spinner("Retrieving compliance parameters and downloading AI evaluation arrays..."):
             
             # Step 1: Query contextual data structures directly out of RAG Vector stores
-            search_query = f"{txn.get('merchant_category')} purchase of {txn.get('amount')} via {txn.get('device')} location {txn.get('location')}"
-            policy_context = retrieve_policy_context(query=search_query, top_k=2)
-            
+            case_location = txn.get('location') or txn.get('transaction_location')
+            search_query = f"{txn.get('merchant_category')} purchase of {txn.get('amount')} via {txn.get('device')} location {case_location}"
+            policy_matches = retrieve_policy_matches(query=search_query, top_k=2)
+            policy_context = format_policy_context(policy_matches)
+            policy_citations = format_policy_citations(policy_matches)
+
             # Step 2: Invoke the backend public signature interface contract endpoint mapping parameters
             investigation_result = run_investigation(
                 transaction=txn,
                 customer_history=hist,
-                policy_context=policy_context
+                policy_context=policy_context,
+                policy_citations=policy_citations
             )
             
             # Handle standard functional baseline exception scenarios gracefully
