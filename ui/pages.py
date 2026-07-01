@@ -503,7 +503,7 @@ def render_analytics_view() -> None:
 
     st.write("")
     st.subheader("Exposure by Case")
-    st.bar_chart(data=df, x="case_id", y="amount", color="#607456")
+    st.bar_chart(data=df, x="case_id", y="amount", color="#CB2957")
 
     st.write("")
     st.subheader("Portfolio")

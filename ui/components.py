@@ -33,7 +33,7 @@ def render_metric_card(label: str, value: Any, delta_status: Optional[str] = Non
         <div class="metric-container">
             <div class="metric-label">{label}</div>
             <div class="metric-value">{value}</div>
-            {"<div style='color:var(--color-primary-dark); font-size:0.85rem; font-weight:500;'>" + delta_status + "</div>" if delta_status else ""}
+            {"<div style='color:var(--color-text-muted); font-size:0.85rem; font-weight:500;'>" + delta_status + "</div>" if delta_status else ""}
         </div>
     """, unsafe_allow_html=True)
 
