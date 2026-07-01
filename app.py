@@ -14,6 +14,7 @@ import logging
 import streamlit as st
 from ui.styles import apply_custom_css
 from ui.pages import (
+    render_role_gate,
     render_case_queue_view,
     render_investigation_view,
     render_analytics_view,
@@ -31,14 +32,21 @@ ROLE_NAV_OPTIONS = {
 
 def main() -> None:
     """Configures main workspace layout wrappers, tracking sidebars navigation matrices options."""
+    role_chosen = "current_role" in st.session_state
     st.set_page_config(
         page_title="Agentic Fraud Investigation Copilot",
         page_icon="🛡️",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded" if role_chosen else "collapsed"
     )
 
     apply_custom_css()
+
+    # Gate the app behind a role choice on first load; the sidebar/nav below only renders
+    # once a role is picked (render_role_gate stages current_role + nav_radio and reruns).
+    if not role_chosen:
+        render_role_gate()
+        return
 
     # A widget's session_state value can't be mutated after it's instantiated in the same run,
     # so cross-view navigation (e.g. the queue's "Open" button) stages the target here and this

@@ -100,6 +100,45 @@ def _last_updated(case_id: str, fallback_date: str) -> str:
     updated = st.session_state.get("case_last_updated", {}).get(case_id)
     return updated or fallback_date
 
+def render_role_gate() -> None:
+    """First-load landing screen: pick a role before entering the app. Sets current_role and
+    routes straight to that role's landing view (Work Queue for the analyst, Manager Queue for
+    the Fraud Manager) instead of dropping everyone on a shared page."""
+    st.write("")
+    st.write("")
+    st.markdown("""
+        <div class="role-gate">
+            <div class="role-gate-title">Agentic Fraud Investigation Copilot</div>
+            <div class="role-gate-subtitle">Select your role to continue</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    _, col1, col2, _ = st.columns([1, 2, 2, 1], gap="large")
+    with col1:
+        st.markdown("""
+            <div class="role-card">
+                <div class="role-card-title">Fraud Investigator</div>
+                <div class="role-card-desc">Review flagged transactions, run AI-assisted
+                investigations, and submit dispositions.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Enter as Fraud Investigator", key="role_gate_analyst", type="primary", use_container_width=True):
+            st.session_state["current_role"] = ANALYST_NAME
+            st.session_state["nav_radio"] = "Home"
+            st.rerun()
+    with col2:
+        st.markdown("""
+            <div class="role-card">
+                <div class="role-card-title">Fraud Manager</div>
+                <div class="role-card-desc">Approve or return analyst decisions awaiting
+                sign-off.</div>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("Enter as Fraud Manager", key="role_gate_manager", type="primary", use_container_width=True):
+            st.session_state["current_role"] = FRAUD_MANAGER_NAME
+            st.session_state["nav_radio"] = "Manager Queue"
+            st.rerun()
+
 def render_case_queue_view() -> None:
     """Landing view: the Fraud Operations Work Queue - system health, today's KPIs,
     and the unresolved investigation queue."""

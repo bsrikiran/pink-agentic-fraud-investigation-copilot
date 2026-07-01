@@ -125,7 +125,8 @@ def apply_custom_css() -> None:
             [data-testid="stAlertContentSuccess"] [data-testid="stIconMaterial"] { color: inherit !important; }
 
             /* Buttons: primary = brand accent (native theme), secondary = accent outline */
-            [data-testid="stBaseButton-primary"] { background-color: var(--color-accent) !important; border-color: var(--color-accent) !important; }
+            [data-testid="stBaseButton-primary"] { background-color: var(--color-accent) !important; border-color: var(--color-accent) !important; color: #FFFFFF !important; }
+            [data-testid="stBaseButton-primary"] p { color: #FFFFFF !important; }
             [data-testid="stBaseButton-primary"]:hover { background-color: var(--color-accent-hover) !important; border-color: var(--color-accent-hover) !important; }
             [data-testid="stBaseButton-secondary"] { color: var(--color-accent) !important; border-color: var(--color-accent) !important; background-color: transparent !important; }
             [data-testid="stBaseButton-secondary"]:hover { color: var(--color-accent-hover) !important; border-color: var(--color-accent-hover) !important; background-color: var(--color-accent-tint) !important; }
@@ -199,6 +200,23 @@ def apply_custom_css() -> None:
                 border-bottom: 1px solid var(--color-border);
                 padding: 0.4rem 0.25rem;
             }
+
+            /* Role selection gate (first load): centered title + two role cards */
+            .role-gate { text-align: center; margin: 4vh 0 2.5rem 0; }
+            .role-gate-title { font-size: 2rem; font-weight: 800; color: var(--color-text); }
+            .role-gate-subtitle { font-size: 1rem; color: var(--color-text-muted); margin-top: 0.5rem; }
+            .role-card {
+                background-color: var(--color-surface);
+                border: 1px solid var(--color-border);
+                border-top: 4px solid var(--color-accent);
+                border-radius: 8px;
+                padding: 2rem 1.5rem 1.25rem;
+                text-align: center;
+                margin-bottom: 0.75rem;
+                min-height: 130px;
+            }
+            .role-card-title { font-size: 1.2rem; font-weight: 700; color: var(--color-text); }
+            .role-card-desc { font-size: 0.85rem; color: var(--color-text-muted); margin-top: 0.5rem; line-height: 1.4; }
 
             /* Analyst identity block, top-right of every page */
             .identity-header { text-align: right; margin-bottom: 0.5rem; }
