@@ -506,14 +506,13 @@ def render_manager_queue_view() -> None:
 def render_analytics_view() -> None:
     """Operational reporting view: portfolio-level KPIs, exposure distribution, and the
     tool's measured business impact."""
-    st.title("Analytics")
+    st.title("Business Impact")
     cases = load_investigation_cases()
 
     if not cases:
         st.warning("No cases found in the active data source.")
         return
 
-    st.markdown("##### Business Impact")
     case_results = st.session_state.setdefault("case_results", {})
     investigated_count = len(case_results)
     time_saved_minutes = investigated_count * ASSUMED_MANUAL_MINUTES_PER_CASE
