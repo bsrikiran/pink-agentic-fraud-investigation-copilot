@@ -22,6 +22,7 @@ load_dotenv()
 OPENAI_API_KEY: Final[str] = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL: Final[str] = os.getenv("OPENAI_MODEL", "gpt-4o")
 MAX_RETRIES: Final[int] = int(os.getenv("MAX_RETRIES", "3"))
+APP_LOGIN_PASSWORD: Final[str] = os.getenv("APP_LOGIN_PASSWORD", "pwd")
 
 def validate_config() -> bool:
     """

@@ -64,6 +64,11 @@ def main() -> None:
     navigation_route = st.sidebar.radio("Navigate", nav_options, key="nav_radio")
 
     st.sidebar.write("---")
+    if st.sidebar.button("Logout", use_container_width=True):
+        # Session-scoped login/nav state only - case data lives in case_store.db and is untouched.
+        for key in ("current_role", "nav_radio", "selected_case_id", "_pending_nav"):
+            st.session_state.pop(key, None)
+        st.rerun()
     st.sidebar.caption("Compliance Protection Enforced")
 
     _, identity_col = st.columns([4, 1])

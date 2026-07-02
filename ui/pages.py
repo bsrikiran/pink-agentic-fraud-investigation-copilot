@@ -3,6 +3,7 @@ Purpose: Assembling main dashboard view configurations, interaction workflows, a
 """
 from datetime import datetime
 import logging
+import altair as alt
 import streamlit as st
 from ui.components import (
     load_investigation_cases,
@@ -23,6 +24,7 @@ from rag.vector_store import PolicyVectorStore
 from rag_ingest import ingest_policies
 from backend.investigator import run_investigation
 from backend.config import validate_config, OPENAI_MODEL
+from backend import case_store
 
 logger = logging.getLogger("ui.pages")
 
@@ -61,55 +63,53 @@ def _get_ai_system_status() -> dict:
         "checked_at": datetime.now().strftime("%H:%M:%S"),
     }
 
-def _derive_status(case_id: str, fallback: str) -> str:
+def _derive_status(store: dict, case_id: str, fallback: str) -> str:
     """Resolves a case's current display status: a Fraud Manager's final sign-off takes
     precedence over a recorded disposition, which takes precedence over an in-progress
     investigation, which takes precedence over the case's original status."""
-    manager_decision = st.session_state.get("manager_decisions", {}).get(case_id)
+    manager_decision = store["manager_decisions"].get(case_id)
     if manager_decision and manager_decision["decision"] == "Closed":
         return "Closed"
-    disposition_records = st.session_state.get("disposition_records", {})
-    case_results = st.session_state.get("case_results", {})
-    disposition = disposition_records.get(case_id)
+    disposition = store["disposition_records"].get(case_id)
     if disposition:
         return disposition["decision"]
-    if case_id in case_results:
+    if case_id in store["case_results"]:
         return "Under Review"
     return fallback
 
-def _resolved_risk(case_id: str, fallback_priority: str) -> str:
+def _resolved_risk(store: dict, case_id: str, fallback_priority: str) -> str:
     """Resolves a case's current risk tier: the AI's own risk_level once investigated,
     otherwise the case's pre-investigation priority."""
-    result = st.session_state.get("case_results", {}).get(case_id)
+    result = store["case_results"].get(case_id)
     return result.get("risk_level", fallback_priority) if result else fallback_priority
 
 def _assigned_to(status_label: str) -> str:
     """A case sits unassigned until someone opens it; there's a single analyst persona for now."""
     return "Unassigned" if status_label.strip().lower() == "new" else ANALYST_NAME
 
-def _last_updated(case_id: str, fallback_date: str) -> str:
+def _last_updated(store: dict, case_id: str, fallback_date: str) -> str:
     """Resolves the most recent activity timestamp for a case: a manager decision takes
     precedence over a disposition, which takes precedence over an investigation run, which
     takes precedence over the case's original creation date."""
-    manager_decision = st.session_state.get("manager_decisions", {}).get(case_id)
+    manager_decision = store["manager_decisions"].get(case_id)
     if manager_decision:
         return manager_decision["timestamp"]
-    disposition = st.session_state.get("disposition_records", {}).get(case_id)
+    disposition = store["disposition_records"].get(case_id)
     if disposition:
         return disposition["timestamp"]
-    updated = st.session_state.get("case_last_updated", {}).get(case_id)
+    updated = store["case_last_updated"].get(case_id)
     return updated or fallback_date
 
 def render_role_gate() -> None:
-    """First-load landing screen: pick a role before entering the app. Sets current_role and
-    routes straight to that role's landing view (Work Queue for the analyst, Manager Queue for
-    the Fraud Manager) instead of dropping everyone on a shared page."""
+    """First-load / logged-out landing screen: sign in with a role before entering
+    the app. Sets current_role and routes straight to that role's landing view (Work Queue for
+    the analyst, Manager Queue for the Fraud Manager) instead of dropping everyone on a shared page."""
     st.write("")
     st.write("")
     st.markdown("""
         <div class="role-gate">
             <div class="role-gate-title">Agentic Fraud Investigation Copilot</div>
-            <div class="role-gate-subtitle">Select your role to continue</div>
+            <div class="role-gate-subtitle"></div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -122,7 +122,7 @@ def render_role_gate() -> None:
                 investigations, and submit dispositions.</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Enter as Fraud Investigator", key="role_gate_analyst", type="primary", use_container_width=True):
+        if st.button("Sign In as Fraud Investigator", key="role_gate_analyst", type="primary", use_container_width=True):
             st.session_state["current_role"] = ANALYST_NAME
             st.session_state["nav_radio"] = "Home"
             st.rerun()
@@ -134,7 +134,7 @@ def render_role_gate() -> None:
                 sign-off.</div>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("Enter as Fraud Manager", key="role_gate_manager", type="primary", use_container_width=True):
+        if st.button("Sign In as Fraud Manager", key="role_gate_manager", type="primary", use_container_width=True):
             st.session_state["current_role"] = FRAUD_MANAGER_NAME
             st.session_state["nav_radio"] = "Manager Queue"
             st.rerun()
@@ -151,8 +151,9 @@ def render_case_queue_view() -> None:
         st.warning("No cases found in the active data source.")
         return
 
+    store = case_store.load_all()
     df = parse_cases_dataframe(cases)
-    df["status"] = [_derive_status(cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
+    df["status"] = [_derive_status(store, cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
 
     disposed_statuses = {"Approved", "Declined", "Escalated"}  # awaiting Fraud Manager sign-off
     resolved_statuses = disposed_statuses | {"Closed"}  # fully out of the active workload
@@ -161,7 +162,7 @@ def render_case_queue_view() -> None:
     pending_review = int((df["status"] == "New").sum())
     open_df = df[~df["status"].isin(resolved_statuses)]
     high_risk_cases = sum(
-        _resolved_risk(cid, pr).lower() == "high"
+        _resolved_risk(store, cid, pr).lower() == "high"
         for cid, pr in zip(open_df["case_id"], open_df["priority"])
     )
     awaiting_approval = int(df["status"].isin(disposed_statuses).sum())
@@ -193,24 +194,25 @@ def render_case_queue_view() -> None:
 
     col_widths = [1.0, 1.2, 1.2, 0.7, 0.7, 1.0, 1.1, 1.0, 1.1]
     headers = ["Case ID", "Customer", "Merchant", "Amount", "Priority", "Current Status", "Assigned To", "Last Updated", ""]
-    header_cols = st.columns(col_widths)
-    for col, label in zip(header_cols, headers):
-        col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
+    with st.container(key="case-queue-table"):
+        header_cols = st.columns(col_widths)
+        for col, label in zip(header_cols, headers):
+            col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
 
-    for _, row in unresolved_df.iterrows():
-        cols = st.columns(col_widths)
-        cols[0].markdown(f"**{row['case_id']}**")
-        cols[1].write(row["customer"])
-        cols[2].write(row["merchant"])
-        cols[3].write(f"{row['amount']:,.2f}")
-        cols[4].markdown(badge_html(row["priority"], tier_variant(row["priority"])), unsafe_allow_html=True)
-        cols[5].markdown(badge_html(row["status"], case_status_variant(row["status"])), unsafe_allow_html=True)
-        cols[6].write(_assigned_to(row["status"]))
-        cols[7].write(_last_updated(row["case_id"], row["created_date"]))
-        if cols[8].button("Review →", key=f"open_{row['case_id']}", use_container_width=True):
-            st.session_state["selected_case_id"] = row["case_id"]
-            st.session_state["_pending_nav"] = "Investigation"
-            st.rerun()
+        for _, row in unresolved_df.iterrows():
+            cols = st.columns(col_widths)
+            cols[0].markdown(f"**{row['case_id']}**")
+            cols[1].write(row["customer"])
+            cols[2].write(row["merchant"])
+            cols[3].write(f"{row['amount']:,.2f}")
+            cols[4].markdown(badge_html(row["priority"], tier_variant(row["priority"])), unsafe_allow_html=True)
+            cols[5].markdown(badge_html(row["status"], case_status_variant(row["status"])), unsafe_allow_html=True)
+            cols[6].write(_assigned_to(row["status"]))
+            cols[7].write(_last_updated(store, row["case_id"], row["created_date"]))
+            if cols[8].button("Review →", key=f"open_{row['case_id']}", use_container_width=True):
+                st.session_state["selected_case_id"] = row["case_id"]
+                st.session_state["_pending_nav"] = "Investigation"
+                st.rerun()
 
 def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
     """Single-case investigation workspace: facts, AI assessment, evidence, analyst disposition,
@@ -243,13 +245,11 @@ def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
         txn = case_package
         hist = case_package.get("customer_history") or case_package
 
-    case_results = st.session_state.setdefault("case_results", {})
-    disposition_records = st.session_state.setdefault("disposition_records", {})
-    manager_decisions = st.session_state.setdefault("manager_decisions", {})
-    disposition = disposition_records.get(selected_id)
-    manager_decision = manager_decisions.get(selected_id)
-    result = case_results.get(selected_id)
-    status_label = _derive_status(selected_id, case_package.get("case_status", "New"))
+    store = case_store.load_all()
+    disposition = store["disposition_records"].get(selected_id)
+    manager_decision = store["manager_decisions"].get(selected_id)
+    result = store["case_results"].get(selected_id)
+    status_label = _derive_status(store, selected_id, case_package.get("case_status", "New"))
 
     render_case_flow(status_label)
 
@@ -311,8 +311,7 @@ def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
                 if not investigation_result or investigation_result.get("status") == "error":
                     st.error(f"Investigation failed: {investigation_result.get('message', 'Unknown error')}")
                 else:
-                    case_results[selected_id] = investigation_result
-                    st.session_state.setdefault("case_last_updated", {})[selected_id] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    case_store.save_result(selected_id, investigation_result)
                     st.rerun()
 
     if not result:
@@ -392,13 +391,13 @@ def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
             if not notes.strip():
                 st.error("Analyst notes are required before submitting a disposition.")
             else:
-                disposition_records[selected_id] = {
+                case_store.save_disposition(selected_id, {
                     "decision": decision,
                     "notes": notes.strip(),
                     "analyst": ANALYST_NAME,
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                }
-                manager_decisions.pop(selected_id, None)  # start a fresh approval cycle
+                })
+                case_store.clear_manager_decision(selected_id)  # start a fresh approval cycle
                 st.rerun()
 
     # 7. Fraud Manager Approval - only relevant once an analyst disposition exists
@@ -418,25 +417,25 @@ def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
             mgr_col1, mgr_col2 = st.columns(2)
             with mgr_col1:
                 if st.button("Approve & Close", type="primary", key=f"mgr_close_{selected_id}", use_container_width=True):
-                    manager_decisions[selected_id] = {
+                    case_store.save_manager_decision(selected_id, {
                         "decision": "Closed",
                         "notes": manager_notes.strip() or "Approved as submitted by the investigator.",
                         "manager": FRAUD_MANAGER_NAME,
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    }
+                    })
                     st.rerun()
             with mgr_col2:
                 if st.button("Return to Investigator", key=f"mgr_return_{selected_id}", use_container_width=True):
                     if not manager_notes.strip():
                         st.error("Notes are required when returning a case to the investigator.")
                     else:
-                        manager_decisions[selected_id] = {
+                        case_store.save_manager_decision(selected_id, {
                             "decision": "Returned",
                             "notes": manager_notes.strip(),
                             "manager": FRAUD_MANAGER_NAME,
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        }
-                        disposition_records.pop(selected_id, None)
+                        })
+                        case_store.clear_disposition(selected_id)
                         st.rerun()
         else:
             st.caption("Awaiting Fraud Manager approval.")
@@ -453,9 +452,10 @@ def render_manager_queue_view() -> None:
         st.warning("No cases found in the active data source.")
         return
 
-    disposition_records = st.session_state.setdefault("disposition_records", {})
-    manager_decisions = st.session_state.setdefault("manager_decisions", {})
-    case_results = st.session_state.setdefault("case_results", {})
+    store = case_store.load_all()
+    disposition_records = store["disposition_records"]
+    manager_decisions = store["manager_decisions"]
+    case_results = store["case_results"]
 
     pending_ids = [cid for cid in disposition_records if manager_decisions.get(cid, {}).get("decision") != "Closed"]
     closed_count = sum(1 for d in manager_decisions.values() if d["decision"] == "Closed")
@@ -477,31 +477,32 @@ def render_manager_queue_view() -> None:
 
     col_widths = [1.0, 1.2, 0.9, 0.9, 1.3, 1.2, 1.1, 1.0]
     headers = ["Case ID", "Customer", "Amount", "Priority", "AI Recommendation", "Analyst Decision", "Submitted", ""]
-    header_cols = st.columns(col_widths)
-    for col, label in zip(header_cols, headers):
-        col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
+    with st.container(key="manager-queue-table"):
+        header_cols = st.columns(col_widths)
+        for col, label in zip(header_cols, headers):
+            col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
 
-    for idx, c in enumerate(cases):
-        cid = resolve_case_id(c, idx)
-        if cid not in pending_ids:
-            continue
+        for idx, c in enumerate(cases):
+            cid = resolve_case_id(c, idx)
+            if cid not in pending_ids:
+                continue
 
-        txn = c["transaction"] if "transaction" in c and isinstance(c["transaction"], dict) else c
-        result = case_results.get(cid, {})
-        disposition = disposition_records[cid]
+            txn = c["transaction"] if "transaction" in c and isinstance(c["transaction"], dict) else c
+            result = case_results.get(cid, {})
+            disposition = disposition_records[cid]
 
-        cols = st.columns(col_widths)
-        cols[0].markdown(f"**{cid}**")
-        cols[1].write(txn.get("customer_name", "N/A"))
-        cols[2].write(f"{txn.get('amount', 0):,.2f}")
-        cols[3].markdown(badge_html(c.get("priority", "N/A"), tier_variant(c.get("priority"))), unsafe_allow_html=True)
-        cols[4].write(result.get("recommendation", "N/A"))
-        cols[5].markdown(badge_html(disposition["decision"], case_status_variant(disposition["decision"])), unsafe_allow_html=True)
-        cols[6].write(disposition["timestamp"])
-        if cols[7].button("Review →", key=f"mgr_open_{cid}", use_container_width=True):
-            st.session_state["selected_case_id"] = cid
-            st.session_state["_pending_nav"] = "Investigation"
-            st.rerun()
+            cols = st.columns(col_widths)
+            cols[0].markdown(f"**{cid}**")
+            cols[1].write(txn.get("customer_name", "N/A"))
+            cols[2].write(f"{txn.get('amount', 0):,.2f}")
+            cols[3].markdown(badge_html(c.get("priority", "N/A"), tier_variant(c.get("priority"))), unsafe_allow_html=True)
+            cols[4].write(result.get("recommendation", "N/A"))
+            cols[5].markdown(badge_html(disposition["decision"], case_status_variant(disposition["decision"])), unsafe_allow_html=True)
+            cols[6].write(disposition["timestamp"])
+            if cols[7].button("Review →", key=f"mgr_open_{cid}", use_container_width=True):
+                st.session_state["selected_case_id"] = cid
+                st.session_state["_pending_nav"] = "Investigation"
+                st.rerun()
 
 def render_analytics_view() -> None:
     """Operational reporting view: portfolio-level KPIs, exposure distribution, and the
@@ -513,7 +514,8 @@ def render_analytics_view() -> None:
         st.warning("No cases found in the active data source.")
         return
 
-    case_results = st.session_state.setdefault("case_results", {})
+    store = case_store.load_all()
+    case_results = store["case_results"]
     investigated_count = len(case_results)
     time_saved_minutes = investigated_count * ASSUMED_MANUAL_MINUTES_PER_CASE
     time_saved_display = f"{time_saved_minutes // 60}h {time_saved_minutes % 60}m" if investigated_count else "0m"
@@ -541,16 +543,41 @@ def render_analytics_view() -> None:
 
     st.write("")
     st.subheader("Exposure by Case")
-    st.bar_chart(data=df, x="case_id", y="amount", color="#CB2957")
+    priority_colors = {"High": "#DC2626", "Medium": "#F59E0B", "Low": "#16A34A"}
+    exposure_chart = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X("case_id:N", title="Case ID", sort=None),
+            y=alt.Y("amount:Q", title="Exposure ($)", scale=alt.Scale(domain=[0, 8000])),
+            color=alt.Color(
+                "priority:N",
+                title="Priority",
+                scale=alt.Scale(domain=list(priority_colors.keys()), range=list(priority_colors.values())),
+            ),
+        )
+    )
+    st.altair_chart(exposure_chart, use_container_width=True)
 
     st.write("")
     st.subheader("Portfolio")
-    df["status"] = [_derive_status(cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
-    st.dataframe(
-        df[["case_id", "customer", "merchant", "amount", "priority", "status"]],
-        use_container_width=True,
-        hide_index=True,
-    )
+    df["status"] = [_derive_status(store, cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
+
+    portfolio_col_widths = [1.0, 1.3, 1.3, 0.9, 0.9, 1.0]
+    portfolio_headers = ["Case ID", "Customer", "Merchant", "Amount", "Priority", "Status"]
+    with st.container(key="portfolio-table"):
+        header_cols = st.columns(portfolio_col_widths)
+        for col, label in zip(header_cols, portfolio_headers):
+            col.markdown(f'<div class="queue-header">{label}</div>', unsafe_allow_html=True)
+
+        for _, row in df.iterrows():
+            cols = st.columns(portfolio_col_widths)
+            cols[0].markdown(f"**{row['case_id']}**")
+            cols[1].write(row["customer"])
+            cols[2].write(row["merchant"])
+            cols[3].write(f"{row['amount']:,.2f}")
+            cols[4].markdown(badge_html(row["priority"], tier_variant(row["priority"])), unsafe_allow_html=True)
+            cols[5].markdown(badge_html(row["status"], case_status_variant(row["status"])), unsafe_allow_html=True)
 
     st.write("---")
 
