@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("ui.components")
 
-ANALYST_NAME = "Sr Fraud Investigator"
+ANALYST_NAME = "Fraud Investigator"
 FRAUD_MANAGER_NAME = "Fraud Manager"
 ANALYST_LOCATION = "Wilmington, DE"
 
