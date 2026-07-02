@@ -72,6 +72,8 @@ def apply_custom_css() -> None:
             [data-testid="stSidebar"] h1,
             [data-testid="stSidebar"] h2,
             [data-testid="stSidebar"] h3 { color: var(--color-secondary-text) !important; }
+            /* Sidebar brand - same visual level (size/weight) as the identity-name text */
+            .sidebar-brand { font-weight: 600; font-size: 0.95rem; margin: 0 0 0.75rem 0; }
             [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p { color: var(--color-secondary-muted) !important; }
             [data-testid="stSidebar"] hr { border-top: 1px solid var(--color-secondary-border); }
             /* Native radio: active nav item gets the primary ring + tint, not a full-width fill */

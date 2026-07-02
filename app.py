@@ -54,7 +54,10 @@ def main() -> None:
     if "_pending_nav" in st.session_state:
         st.session_state["nav_radio"] = st.session_state.pop("_pending_nav")
 
-    st.sidebar.markdown("### Agentic Fraud Investigation Copilot")
+    st.sidebar.markdown(
+        '<div class="sidebar-brand">Agentic Fraud Investigation Copilot</div>',
+        unsafe_allow_html=True,
+    )
     current_role = st.session_state["current_role"]
 
     nav_options = ROLE_NAV_OPTIONS[current_role]
