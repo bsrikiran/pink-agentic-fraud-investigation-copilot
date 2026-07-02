@@ -61,23 +61,28 @@ def render_system_status_panel(checks: List[Tuple[str, bool]], last_refreshed: s
     """, unsafe_allow_html=True)
 
 def badge_html(label: str, variant: str) -> str:
-    """Returns a colored status/priority pill span. Variant must match a .badge-<variant> CSS class
-    (high, medium, low, neutral, approved, declined, escalated, review, returned, closed)."""
+    """Returns a colored status/priority pill span. Variant must match a .badge-<variant> CSS
+    color role (danger, warning, success, danger-solid, dark, neutral) - see tier_variant and
+    case_status_variant, which map free-text labels onto these roles."""
     return f'<span class="badge badge-{variant}">{label}</span>'
 
 def tier_variant(tier: Optional[str]) -> str:
-    """Maps a free-text risk/priority label to its badge color variant."""
-    return {"high": "high", "medium": "medium", "low": "low"}.get((tier or "").strip().lower(), "neutral")
+    """Maps a free-text risk/priority label to its badge color role."""
+    return {"high": "danger", "medium": "warning", "low": "success"}.get((tier or "").strip().lower(), "neutral")
 
 def case_status_variant(status_label: str) -> str:
-    """Maps a case's derived status label to its badge color variant."""
+    """Maps a case's derived status label to its badge color role. Accepts both the current
+    analyst disposition vocabulary (Close/Investigate/Escalated) and the legacy one
+    (Approved/Declined) so records saved under the old labels still render correctly."""
     return {
-        "approved": "approved",
-        "declined": "declined",
-        "escalated": "escalated",
-        "under review": "review",
-        "closed": "closed",
-        "returned": "returned",
+        "close": "success",
+        "approved": "success",       # legacy label for "Close"
+        "investigate": "warning",
+        "declined": "warning",       # legacy label for "Investigate"
+        "escalated": "danger-solid",
+        "under review": "warning",
+        "returned": "warning",
+        "closed": "dark",
     }.get(status_label.strip().lower(), "neutral")
 
 def render_decision_record(decision: str, notes: str, actor: str, timestamp: str) -> None:
@@ -95,15 +100,15 @@ CASE_FLOW_STAGES = ["Open", "Under Review", "Waiting for Approval", "Closed"]
 
 def _flow_stage_index(status_label: str) -> int:
     """Maps a case's derived status to its position in the lifecycle flow.
-    A submitted analyst disposition (Approved/Declined/Escalated) moves the case to
-    'Waiting for Approval' rather than 'Closed' - it isn't final until a Fraud Manager
-    signs off, which isn't built yet."""
+    A submitted analyst disposition (Close/Investigate/Escalated, or the legacy
+    Approved/Declined labels) moves the case to 'Waiting for Approval' rather than 'Closed' -
+    it isn't final until a Fraud Manager signs off."""
     status = status_label.strip().lower()
     if status == "new":
         return 0
     if status == "under review":
         return 1
-    if status in ("approved", "declined", "escalated"):
+    if status in ("close", "investigate", "escalated", "approved", "declined"):
         return 2
     if status == "closed":
         return 3

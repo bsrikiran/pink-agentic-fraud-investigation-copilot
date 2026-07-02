@@ -155,7 +155,7 @@ def render_case_queue_view() -> None:
     df = parse_cases_dataframe(cases)
     df["status"] = [_derive_status(store, cid, cs) for cid, cs in zip(df["case_id"], df["case_status"])]
 
-    disposed_statuses = {"Approved", "Declined", "Escalated"}  # awaiting Fraud Manager sign-off
+    disposed_statuses = {"Close", "Investigate", "Escalated"}  # awaiting Fraud Manager sign-off
     resolved_statuses = disposed_statuses | {"Closed"}  # fully out of the active workload
 
     active_cases = int((df["status"] == "Under Review").sum())
@@ -380,7 +380,7 @@ def render_investigation_view(current_role: str = ANALYST_NAME) -> None:
         if manager_decision and manager_decision["decision"] == "Returned":
             st.warning(f"Returned by {manager_decision['manager']}: {manager_decision['notes']}")
         decision = st.radio(
-            "Decision", ["Approved", "Declined", "Escalated"],
+            "Decision", ["Close", "Investigate", "Escalated"],
             horizontal=True, key=f"decision_{selected_id}"
         )
         notes = st.text_area(

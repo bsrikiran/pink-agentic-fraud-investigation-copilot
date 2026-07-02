@@ -166,9 +166,11 @@ def apply_custom_css() -> None:
             .metric-value { font-size: 2.25rem; font-weight: 700; color: var(--color-text); margin: 0.5rem 0; }
             .metric-label { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); }
 
-            /* Status / Priority / Risk badges - dedicated semantic colors:
-               high/declined = danger, medium/needs-review/returned = warning,
-               low/approved = success, neutral/new = muted surface, closed = solid secondary. */
+            /* Status / Priority / Risk badges - a fixed set of semantic color roles (not one
+               class per status word), so relabeling a status never requires a CSS change:
+               danger = high/urgent, warning = needs attention/in progress, success = resolved
+               favorably, danger-solid = loudest urgency (escalated), dark = final/closed,
+               neutral = no signal yet (e.g. New). */
             .badge {
                 display: inline-block;
                 padding: 0.15rem 0.6rem;
@@ -178,16 +180,12 @@ def apply_custom_css() -> None:
                 letter-spacing: 0.02em;
                 white-space: nowrap;
             }
-            .badge-high       { background-color: var(--color-danger-tint); color: var(--color-danger); border: 1px solid rgba(220, 38, 38, 0.30); }
-            .badge-medium     { background-color: var(--color-warning-tint); color: var(--color-warning); }
-            .badge-low        { background-color: var(--color-success-tint); color: var(--color-success); }
-            .badge-neutral    { background-color: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
-            .badge-approved   { background-color: var(--color-success-tint); color: var(--color-success); }
-            .badge-declined   { background-color: var(--color-danger-tint); color: var(--color-danger); border: 1px solid rgba(220, 38, 38, 0.30); }
-            .badge-escalated  { background-color: var(--color-danger); color: var(--color-bg); font-weight: 700; }
-            .badge-review     { background-color: var(--color-warning-tint); color: var(--color-warning); }
-            .badge-returned   { background-color: var(--color-warning-tint); color: var(--color-warning); }
-            .badge-closed     { background-color: var(--color-secondary); color: var(--color-secondary-text); }
+            .badge-danger        { background-color: var(--color-danger-tint); color: var(--color-danger); border: 1px solid rgba(220, 38, 38, 0.30); }
+            .badge-warning       { background-color: var(--color-warning-tint); color: var(--color-warning); }
+            .badge-success       { background-color: var(--color-success-tint); color: var(--color-success); }
+            .badge-neutral       { background-color: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); }
+            .badge-danger-solid  { background-color: var(--color-danger); color: var(--color-bg); font-weight: 700; }
+            .badge-dark          { background-color: var(--color-secondary); color: var(--color-secondary-text); }
 
             /* Case Queue rows */
             .queue-row {
@@ -260,9 +258,9 @@ def apply_custom_css() -> None:
                 padding: 0.9rem 1.1rem;
                 margin-bottom: 1rem;
             }
-            .assessment-strip.tier-high   { border-left-color: var(--color-danger); }
-            .assessment-strip.tier-medium { border-left-color: var(--color-warning); }
-            .assessment-strip.tier-low    { border-left-color: var(--color-success); }
+            .assessment-strip.tier-danger  { border-left-color: var(--color-danger); }
+            .assessment-strip.tier-warning { border-left-color: var(--color-warning); }
+            .assessment-strip.tier-success { border-left-color: var(--color-success); }
             .assessment-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); }
             .assessment-value { font-size: 1.05rem; font-weight: 600; color: var(--color-text); margin-top: 0.1rem; }
             .assessment-summary { font-size: 0.92rem; color: var(--color-text); margin-top: 0.6rem; line-height: 1.5; }
